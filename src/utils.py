@@ -1,7 +1,6 @@
 import json
 from datetime import datetime
 import pandas as pd
-import logging
 
 def process_date(date_time_str):
     # Преобразование строки в объект datetime
