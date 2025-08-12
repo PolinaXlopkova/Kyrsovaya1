@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime
 from datetime import timedelta
 
@@ -96,3 +97,72 @@ def simple_search(query, transactions):
 
     # Возврат ответа в формате JSON
     return json.dumps(response)
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def search_by_phone(transactions, phone_number):
+    """
+    Функция для поиска транзакций по телефонному номеру.
+
+    :param transactions: Список транзакций в формате словарей
+    :param phone_number: Номер телефона для поиска
+    :return: JSON-ответ с найденными транзакциями
+    """
+    try:
+        pattern = re.compile(re.escape(phone_number))
+        results = [transaction for transaction in transactions if pattern.search(transaction.get('phone', ''))]
+
+        response = {
+            'status': 'success',
+            'data': results
+        }
+
+        logger.info("Поиск завершен, найдено %d транзакций", len(results))
+        return json.dumps(response)
+
+    except Exception as e:
+        logger.error("Ошибка при поиске: %s", e)
+        return json.dumps({'status': 'error', 'message': str(e)})
+
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+
+
+def search_transfers(transactions):
+    """
+    Функция для поиска переводов физическим лицам.
+
+    :param transactions: список словарей с транзакциями
+    :return: JSON-ответ с результатами поиска
+    """
+    logging.info("Начало поиска переводов")
+
+    results = []
+
+    for transaction in transactions:
+        # Проверка на корректность данных
+        if 'name' in transaction and 'amount' in transaction:
+            name = transaction['name']
+            amount = transaction['amount']
+
+            # Использование регулярного выражения для проверки имени
+            if re.match(r'^[A-Za-z\s]+$', name):
+                results.append({
+                    'name': name,
+                    'amount': amount,
+                })
+                logging.info(f"Добавлена транзакция: {name}, сумма: {amount}")
+            else:
+                logging.warning(f"Некорректное имя: {name}")
+        else:
+            logging.warning("Недостаточно данных в транзакции")
+
+    # Формирование JSON-ответа
+    json_response = json.dumps(results)
+    logging.info("Поиск завершен")
+
+    return json_response
