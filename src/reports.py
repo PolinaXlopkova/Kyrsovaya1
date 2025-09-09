@@ -1,107 +1,91 @@
-import pandas as pd
 import json
 import logging
 from datetime import datetime, timedelta
+from functools import wraps
+from typing import Optional
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+import pandas as pd
 
 
-def expenses_by_category(df: pd.DataFrame, category: str, date: str) -> str:
+def report_to_file(default_filename: Optional[str] = None):
+    """Декоратор для сохранения результатов отчета в файл"""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Получаем результат выполнения функции
+            result = func(*args, **kwargs)
+
+            # Определяем имя файла
+            filename = kwargs.get("report_filename", default_filename)
+            if filename is None:
+                now = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"report_{func.__name__}_{now}.json"
+
+            try:
+                if isinstance(result, pd.DataFrame):
+                    result.to_json(filename, orient="records", indent=2)
+                else:
+                    with open(filename, "w") as f:
+                        json.dump(result, f, indent=2, ensure_ascii=False)
+                logging.info(f"Report saved to {filename}")
+            except Exception as e:
+                logging.error(f"Failed to save report: {e}")
+
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+@report_to_file(default_filename="spending_by_category_report.json")
+def spending_by_category(
+    transactions_df: pd.DataFrame,
+    category_name: str,
+    target_date: Optional[str] = None,
+    report_filename: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Анализирует расходы по категории за последние 3 месяца
+
+    Args:
+        transactions_df: DataFrame с транзакциями
+        category_name: Название категории для анализа
+        target_date: Дата отсчета (YYYY-MM-DD), None - текущая дата
+        report_filename: Имя файла для сохранения отчета
+
+    Returns:
+        DataFrame с расходами по месяцам
+    """
     try:
-        # Преобразуем строку даты в объект datetime
-        date = datetime.strptime(date, '%Y-%m-%d')
+        # Определяем период анализа
+        end_date = datetime.strptime(target_date, "%Y-%m-%d") if target_date else datetime.now()
+        start_date = end_date - timedelta(days=90)
 
-        # Определяем начальную и конечную даты трехмесячного периода
-        start_date = date - timedelta(days=90)
-        end_date = date
+        # Преобразуем даты в строки
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
 
-        # Фильтруем данные по категории и дате
-        filtered_df = df[(df['category'] == category) &
-                         (df['date'] >= start_date) &
-                         (df['date'] <= end_date)]
+        # Фильтруем данные
+        is_category = transactions_df["Категория"] == category_name
+        in_date_range = (transactions_df["Дата операции"] >= start_date_str) & (
+            transactions_df["Дата операции"] <= end_date_str
+        )
+        filtered_df = transactions_df[is_category & in_date_range].copy()
 
-        # Группируем по дате и суммируем расходы
-        result = filtered_df.groupby(filtered_df['date'].dt.date)['amount'].sum().reset_index()
+        # Добавляем месяц для группировки
+        filtered_df["Месяц"] = pd.to_datetime(filtered_df["Дата операции"]).dt.to_period("M")
 
-        # Преобразуем результат в JSON
-        json_result = result.to_json(orient='records')
+        # Группируем и агрегируем данные
+        result = (
+            filtered_df.groupby("Месяц").agg(Сумма=("Сумма платежа", "sum"), Кешбэк=("Кешбэк", "sum")).reset_index()
+        )
 
-        logging.info("Отчет по категории '%s' успешно создан.", category)
-        return json_result
+        result["Месяц"] = result["Месяц"].astype(str)
+
+        return result
 
     except Exception as e:
-        logging.error("Ошибка при создании отчета: %s", e)
-        return json.dumps({"error": str(e)})
-
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-
-
-def report_expenses_by_weekday(dataframe, date=None):
-    """
-    Функция отчета «Траты по дням недели».
-
-    :param dataframe: DataFrame с данными о тратах
-    :param date: Дата для анализа (по умолчанию - текущая дата)
-    :return: JSON-ответ с тратами по дням недели
-    """
-    if date is None:
-        date = datetime.now()
-
-    # Преобразуем дату в формат, нужный для фильтрации
-    start_date = date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = start_date + pd.Timedelta(days=7)
-
-    # Фильтруем данные по дате
-    filtered_data = dataframe[(dataframe['date'] >= start_date) & (dataframe['date'] < end_date)]
-
-    # Группируем данные по дням недели и суммируем траты
-    expenses_by_weekday = filtered_data.groupby(filtered_data['date'].dt.day_name()).sum()['amount']
-
-    # Преобразуем результат в JSON
-    result = expenses_by_weekday.to_json()
-
-    # Логируем информацию
-    logging.info(f'Отчет по тратам за неделю: {result}')
-
-    return json.loads(result)
-
-    # Настройка логирования
-
-
-logging.basicConfig(level=logging.INFO)
-
-
-def report_expenses(df, category, reference_date):
-    try:
-        # Преобразуем строку даты в объект datetime
-        reference_date = datetime.strptime(reference_date, '%Y-%m-%d')
-
-        # Определяем начало и конец трехмесячного периода
-        start_date = reference_date - timedelta(days=90)
-        end_date = reference_date
-
-        # Фильтруем данные по категории и дате
-        filtered_df = df[(df['category'] == category) &
-                         (df['date'] >= start_date) &
-                         (df['date'] <= end_date)]
-
-        # Группируем данные по рабочим и выходным дням
-        filtered_df['is_weekend'] = filtered_df['date'].dt.weekday >= 5
-        expenses_summary = filtered_df.groupby('is_weekend')['amount'].sum().to_dict()
-
-        # Формируем JSON-ответ
-        response = {
-            'category': category,
-            'expenses': expenses_summary,
-            'reference_date': reference_date.strftime('%Y-%m-%d')
-        }
-
-        logging.info('Отчет успешно сгенерирован')
-        return json.dumps(response)
-
-    except Exception as e:
-        logging.error(f'Ошибка при генерации отчета: {e}')
-        return json.dumps({'error': str(e)})
+        logging.error(f"Error in spending analysis: {e}")
+        raise
