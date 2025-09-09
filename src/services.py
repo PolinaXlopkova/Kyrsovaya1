@@ -1,168 +1,74 @@
 import json
 import logging
-import re
 from datetime import datetime
-from datetime import timedelta
-
-# Настройка логгирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def get_cashback_categories(year, month, transactions):
-    try:
-        # Преобразование входных данных в дату
-        target_date = datetime(year, month, 1)
-
-        # Список для хранения категорий с повышенным кешбэком
-        cashback_categories = {}
-
-        # Обработка транзакций
-        for transaction in transactions:
-            transaction_date = datetime.strptime(transaction['date'], '%Y-%m-%d')
-            if transaction_date.year == year and transaction_date.month == month:
-                category = transaction['category']
-                amount = transaction['amount']
-
-                # Суммируем кешбэк по категориям
-                if category in cashback_categories:
-                    cashback_categories[category] += amount
-                else:
-                    cashback_categories[category] = amount
-
-        # Формирование JSON-ответа
-        response = {
-            "year": year,
-            "month": month,
-            "cashback_categories": cashback_categories
-        }
-
-        logging.info("Кешбэк категории успешно обработаны")
-        return json.dumps(response)
-
-    except Exception as e:
-        logging.error(f"Ошибка в обработке кешбэка: {e}")
-        return json.dumps({"error": "Произошла ошибка при обработке запроса"})
-
-def invest_piggy_bank(month: str, transactions: list, round_limit: int) -> str:
-    try:
-        # Преобразование месяца в формат datetime
-        month_date = datetime.strptime(month, '%Y-%m')
-        month_start = month_date.replace(day=1)
-        month_end = month_date.replace(day=28) + timedelta(
-            days=4)  # берем 4 дня для гарантии перехода на следующий месяц
-        month_end = month_end - timedelta(days=month_end.day)  # последний день текущего месяца
-
-        total_investment = 0
-
-        for transaction in transactions:
-            transaction_date = datetime.strptime(transaction['date'], '%Y-%m-%d')
-            if month_start <= transaction_date <= month_end:
-                total_investment += transaction['amount']
-
-        # Округление по лимиту
-        rounded_investment = round(total_investment / round_limit) * round_limit
-
-        # Формирование JSON-ответа
-        response = {
-            'month': month,
-            'total_investment': rounded_investment
-        }
-
-        return json.dumps(response)
-
-    except Exception as e:
-        logging.error(f"Ошибка в расчете: {e}")
-        return json.dumps({'error': 'Invalid input or processing error'})
-
-def simple_search(query, transactions):
-    logger.info("Запрос на поиск: %s", query)
-
-    # Приведение запроса к нижнему регистру для нечувствительного поиска
-    query_lower = query.lower()
-
-    # Фильтрация транзакций по запросу
-    results = [
-        transaction for transaction in transactions
-        if query_lower in transaction.get('description', '').lower()
-    ]
-
-    # Формирование JSON-ответа
-    response = {
-        'query': query,
-        'results': results,
-        'count': len(results)
-    }
-
-    logger.info("Найдено %d результатов для запроса: %s", len(results), query)
-
-    # Возврат ответа в формате JSON
-    return json.dumps(response)
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from typing import Any, Dict, List
 
 
-def search_by_phone(transactions, phone_number):
+def calculate_cashback_categories(transactions: List[Dict[str, Any]], year: int, month: int) -> Dict[str, float]:
     """
-    Функция для поиска транзакций по телефонному номеру.
+    Анализирует выгодность категорий для повышенного
+    кешбэка за указанный месяц и год.
 
-    :param transactions: Список транзакций в формате словарей
-    :param phone_number: Номер телефона для поиска
-    :return: JSON-ответ с найденными транзакциями
+    Args:
+        transactions: Список транзакций в формате словарей
+        year: Год для анализа
+        month: Месяц для анализа (1-12)
+
+    Returns:
+        Словарь с категориями и суммарным кешбэком по ним
     """
     try:
-        pattern = re.compile(re.escape(phone_number))
-        results = [transaction for transaction in transactions if pattern.search(transaction.get('phone', ''))]
+        # Фильтрация транзакций по дате
+        filtered_transactions = filter(lambda t: _is_transaction_in_period(t, year, month), transactions)
 
-        response = {
-            'status': 'success',
-            'data': results
-        }
+        # Группировка по категориям и расчет кешбэка
+        category_cashback = {}
+        for transaction in filtered_transactions:
+            category = transaction.get("Категория", "Другое")
+            amount = transaction.get("Сумма платежа", 0)
+            cashback = transaction.get("Кешбэк", 0)
 
-        logger.info("Поиск завершен, найдено %d транзакций", len(results))
-        return json.dumps(response)
+            if category not in category_cashback:
+                category_cashback[category] = 0.0
+
+            category_cashback[category] += cashback if cashback else amount * 0.01
+            # 1% если кешбэк не указан
+
+        # Сортировка по убыванию кешбэка
+        sorted_categories = sorted(category_cashback.items(), key=lambda item: item[1], reverse=True)
+
+        return dict(sorted_categories)
 
     except Exception as e:
-        logger.error("Ошибка при поиске: %s", e)
-        return json.dumps({'status': 'error', 'message': str(e)})
+        logging.error(f"Error in calculate_cashback_categories: {e}")
+        raise
 
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+def _is_transaction_in_period(transaction: dict[str, Any], year: int, month: int) -> bool:
+    """Проверяет, относится ли транзакция к указанному периоду"""
+    date_str = transaction.get("Дата операции")
+    if not date_str:
+        return False
+
+    try:
+        transaction_date = datetime.strptime(date_str, "%Y-%m-%d")
+        return transaction_date.year == year and transaction_date.month == month
+    except ValueError:
+        logging.warning(f"Invalid date format in transaction: {date_str}")
+        return False
 
 
-def search_transfers(transactions):
+def get_cashback_categories_json(data: List[Dict[str, Any]], year: int, month: int) -> str:
     """
-    Функция для поиска переводов физическим лицам.
+    Возвращает JSON с анализом выгодных категорий для кешбэка
 
-    :param transactions: список словарей с транзакциями
-    :return: JSON-ответ с результатами поиска
+    Args:
+        data: Список транзакций
+        year: Год для анализа
+        month: Месяц для анализа
+
+    Returns:
+        JSON-строка с результатами анализа
     """
-    logging.info("Начало поиска переводов")
-
-    results = []
-
-    for transaction in transactions:
-        # Проверка на корректность данных
-        if 'name' in transaction and 'amount' in transaction:
-            name = transaction['name']
-            amount = transaction['amount']
-
-            # Использование регулярного выражения для проверки имени
-            if re.match(r'^[A-Za-z\s]+$', name):
-                results.append({
-                    'name': name,
-                    'amount': amount,
-                })
-                logging.info(f"Добавлена транзакция: {name}, сумма: {amount}")
-            else:
-                logging.warning(f"Некорректное имя: {name}")
-        else:
-            logging.warning("Недостаточно данных в транзакции")
-
-    # Формирование JSON-ответа
-    json_response = json.dumps(results)
-    logging.info("Поиск завершен")
-
-    return json_response
+    result = calculate_cashback_categories(data, year, month)
+    return json.dumps(result, ensure_ascii=False, indent=2)
