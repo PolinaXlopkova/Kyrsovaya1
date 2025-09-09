@@ -100,3 +100,7 @@ def run_analysis() -> None:
 
 if __name__ == "__main__":
     run_analysis()
+ feature/kursovaya-1
+
+    # Запустите модуль командой python -m src.main
+ develop
