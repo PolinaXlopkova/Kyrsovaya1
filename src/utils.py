@@ -21,4 +21,8 @@ def load_user_settings() -> dict:
             return json.load(f)
     except Exception as e:
         logging.error(f"Error loading user settings: {e}")
+ feature/kursovaya-1
         return {}
+
+        return {}
+ develop

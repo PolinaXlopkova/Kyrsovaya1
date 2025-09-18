@@ -119,4 +119,8 @@ def main_page(date_time: str, excel_path: str = "data/operations.xlsx") -> Dict[
         }
     except Exception as e:
         logging.error(f"Error in main_page: {e}")
+ feature/kursovaya-1
         raise
+
+        raise
+develop

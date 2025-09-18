@@ -1,5 +1,11 @@
 import json
+ feature/kursovaya-1
+
 import pytest
+
+
+import pytest
+ develop
 from src.services import calculate_cashback_categories, get_cashback_categories_json
 
 

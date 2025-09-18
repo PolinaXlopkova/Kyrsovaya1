@@ -100,4 +100,3 @@ def run_analysis() -> None:
 
 if __name__ == "__main__":
     run_analysis()
-    # Запустите модуль командой python -m src.main
