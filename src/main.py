@@ -96,7 +96,3 @@ def run_analysis() -> None:
 
     except Exception as e:
         logging.error(f"Application error: {e}")
-
-
-if __name__ == "__main__":
-    run_analysis()
